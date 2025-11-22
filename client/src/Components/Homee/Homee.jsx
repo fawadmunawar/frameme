@@ -17,7 +17,7 @@ import image6 from "../../assets/Home Images/six.png"
 import image7 from "../../assets/Home Images/seven.png"
 import card from "../../assets/Home Images/card.png"
 import foooter from "../../assets/Home Images/foooter.png"
-import mainpic from "../../assets/Cart/mainpic.png"
+import mainpic from "../../../public/homePicture.png"
 
 const topItems = [
     {
