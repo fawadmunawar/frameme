@@ -15,78 +15,216 @@ import image5 from "../../assets/Home Images/five.png"
 import image6 from "../../assets/Home Images/six.png"
 import image7 from "../../assets/Home Images/seven.png"
 
+import glassesImageSource from "../../assets/Sunglasses/main1.png";
+
+
+import * as faceapi from "face-api.js";
+
 // --- Helper Component for Try-On (New) ---
 // This is where the camera logic will live
 function VirtualTryOn({ isActive, onClose }) {
-  const videoRef = useRef(null);
+    const videoRef = useRef(null);
+    const canvasRef = useRef(null); // New ref for the canvas overlay
+    const glassesImgRef = useRef(new Image()); // Ref to load the glasses image once
 
-  useEffect(() => {
-    let stream = null;
+    // 1. Model and Image Loading
+    useEffect(() => {
+    const MODEL_URL = '/models'; 
 
-    const startCamera = async () => {
-      if (isActive && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    const loadModelsAndImage = async () => {
         try {
-          // Request access to the user's video camera
-          stream = await navigator.mediaDevices.getUserMedia({ video: true });
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            // The actual face tracking and glasses overlay logic (from my previous suggestion) 
-            // would go here, using libraries like face-api.js or Three.js.
-          }
-        } catch (err) {
-          console.error("Error accessing the camera: ", err);
-          alert("Could not access your camera. Please ensure permissions are granted.");
-          onClose(); // Close the try-on mode if camera access fails
+            // --- A. Load the AR Models ---
+            await faceapi.tf.setBackend('webgl'); 
+            await faceapi.tf.ready();
+            
+            await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+            await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+            console.log("✅ Face tracking models loaded!");
+
+            // --- B. Load the Glasses Image (THE FIX) ---
+            const img = new Image();
+            img.src = glassesImageSource; // This comes from your import
+            
+            // Check if the import actually worked
+            console.log("Attempting to load image from:", glassesImageSource); 
+
+            img.onload = () => {
+                console.log("✅ Glasses image loaded successfully!");
+                console.log(`Dimensions: ${img.width}x${img.height}`);
+                glassesImgRef.current = img; // Only update the ref once loaded
+            };
+
+            img.onerror = (err) => {
+                console.error("❌ FAILED to load glasses image. Check the path!", err);
+            };
+
+        } catch (error) {
+            console.error("Failed to load AR models:", error);
         }
-      } else if (stream) {
-          // Clean up stream when component unmounts or isActive becomes false
-          stream.getTracks().forEach(track => track.stop());
-      }
+    };
+    
+    loadModelsAndImage();
+}, []);
+
+    // 2. Camera Start and Cleanup Logic (Modified to attach the canvas)
+    useEffect(() => {
+        let stream = null;
+
+        const startCamera = async () => {
+            if (isActive && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    if (videoRef.current) {
+                        videoRef.current.srcObject = stream;
+                        // Start tracking once the video starts playing
+                        videoRef.current.addEventListener('play', handleVideoOnPlay); 
+                    }
+                } catch (err) {
+                    console.error("Error accessing the camera: ", err);
+                    alert("Could not access your camera. Please ensure permissions are granted.");
+                    onClose(); 
+                }
+            }
+        };
+
+        const stopCamera = () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            if (videoRef.current) {
+                videoRef.current.removeEventListener('play', handleVideoOnPlay);
+            }
+        };
+
+        if (isActive) {
+            startCamera();
+        } else {
+            stopCamera();
+        }
+
+        // Cleanup function for unmounting/closing
+        return () => {
+            stopCamera();
+        };
+    }, [isActive, onClose]);
+
+
+    // 3. Drawing and Tracking Loop
+    const handleVideoOnPlay = () => {
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+
+        if (!video || !canvas) return;
+
+        // Ensure canvas dimensions match video dimensions for correct overlay
+        const displaySize = { width: video.clientWidth, height: video.clientHeight };
+        faceapi.matchDimensions(canvas, displaySize);
+
+        // This interval performs the tracking and drawing for every frame
+        const intervalId = setInterval(async () => {
+            if (video.paused || video.ended) {
+                clearInterval(intervalId);
+                return;
+            }
+
+            // Detect a single face and get the 68 landmark points
+            const detections = await faceapi.detectSingleFace(
+                video,
+                new faceapi.TinyFaceDetectorOptions()
+            ).withFaceLandmarks();
+
+            if (detections) {
+                // Resize detection results to fit the canvas display size
+                const resizedDetections = faceapi.resizeResults(detections, displaySize);
+                
+                // Clear and Draw the glasses
+                drawGlassesOverlay(canvas, resizedDetections, glassesImgRef.current);
+            } else {
+                // Clear canvas if no face is detected
+                canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+            }
+
+        }, 100); // Check every 100ms (10 FPS)
+
+        // Clear interval when closing (will be handled by the useEffect cleanup, too, but this is safer)
+        if (!isActive) {
+            clearInterval(intervalId);
+        }
     };
 
-    startCamera();
+    // Updates to handleVideoOnPlay
+// const handleVideoOnPlay = () => {
+//     const video = videoRef.current;
+//     const canvas = canvasRef.current;
+//     if (!video || !canvas) return;
 
-    // Cleanup function: stop the camera tracks when the component unmounts or re-renders
-    return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [isActive, onClose]); // Re-run effect when isActive state changes
+//     const displaySize = { width: video.clientWidth, height: video.clientHeight };
+//     faceapi.matchDimensions(canvas, displaySize);
 
-  if (!isActive) return null;
+//     const intervalId = setInterval(async () => {
+//         if (video.paused || video.ended) return;
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex flex-col items-center justify-center p-4">
-      <button 
-        onClick={onClose}
-        className="absolute top-4 right-4 text-white text-3xl hover:text-orange-500 transition"
-        aria-label="Close Virtual Try-On"
-      >
-        <AiOutlineClose />
-      </button>
+//         // 1. Log to console to prove loop is running
+//         // console.log("Scanning..."); 
 
-      <div className="relative w-full max-w-lg aspect-video bg-gray-800 rounded-xl shadow-2xl">
-        <video 
-          ref={videoRef} 
-          autoPlay 
-          playsInline 
-          className="w-full h-full object-cover rounded-xl transform scaleX(-1)" // Mirrors the video (standard for selfie view)
-        >
-        </video>
-        {/*
-          *** The Augmented Reality (AR) Layer goes here ***
-          A canvas element would be placed over the video to render the glasses.
-          <canvas id="glasses-overlay" className="absolute inset-0"></canvas>
-        */}
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-white text-lg font-bold">
-            {/* Placeholder for the glasses, which would be dynamically drawn */}
-            [Glasses Overlay Area] 
+//         const detections = await faceapi.detectSingleFace(
+//             video,
+//             new faceapi.TinyFaceDetectorOptions()
+//         ).withFaceLandmarks();
+
+//         const ctx = canvas.getContext('2d');
+//         ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+//         if (detections) {
+//             console.log("Face Detected!"); // <--- LOOK FOR THIS IN CONSOLE
+            
+//             const resizedDetections = faceapi.resizeResults(detections, displaySize);
+            
+//             // --- DEBUG TEST: DRAW A BOX INSTEAD OF GLASSES ---
+//             // This checks if the canvas coordinates are correct
+//             faceapi.draw.drawDetections(canvas, resizedDetections);
+//             // -------------------------------------------------
+
+//             // Your original function (Uncomment when box works)
+//             // drawGlassesOverlay(canvas, resizedDetections, glassesImgRef.current);
+//         } 
+//     }, 100);
+
+//     return () => clearInterval(intervalId);
+// };
+
+    if (!isActive) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex flex-col items-center justify-center p-4">
+            <button 
+                onClick={onClose}
+                className="absolute top-4 right-4 text-white text-3xl hover:text-orange-500 transition"
+                aria-label="Close Virtual Try-On"
+            >
+                <AiOutlineClose />
+            </button>
+
+            <div className="relative w-full max-w-lg aspect-video bg-gray-800 rounded-xl shadow-2xl">
+                <video 
+                    ref={videoRef} 
+                    autoPlay 
+                    playsInline 
+                    muted // Mute is required for many browsers to autoplay media
+                    className="w-full h-full object-cover rounded-xl transform scaleX(-1)" // Mirrors the video
+                >
+                </video>
+                
+                {/* The Canvas for Drawing the Glasses - MUST be directly over the video */}
+                <canvas 
+                    ref={canvasRef} // <-- New Ref attached here
+                    className="absolute inset-0 w-full h-full transform scaleX(-1)"
+                />
+            </div>
+            <p className="mt-4 text-white">Move your head to see how the glasses fit! (Loading models...)</p>
         </div>
-      </div>
-      <p className="mt-4 text-white">Move your head to see how the glasses fit!</p>
-    </div>
-  );
+    );
 }
 
 
@@ -291,3 +429,77 @@ export default function Productpage() {
     </div>
   );
 }
+
+const drawGlassesOverlay = (canvas, detections, glassesImage) => {
+    const ctx = canvas.getContext('2d');
+    
+    // 1. Check if the image is actually loaded
+    // explicitly check naturalWidth to ensure it has real data
+    if (!glassesImage.complete || glassesImage.naturalWidth === 0) {
+        console.log("⚠️ Glasses Image not loaded yet!");
+        return;
+    }
+
+    // Clear previous frame
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 2. Get Landmarks
+    const landmarks = detections.landmarks;
+    const leftEye = landmarks.getLeftEye();
+    const rightEye = landmarks.getRightEye();
+
+    // The logic: Left Eye [0] is the outer corner. Right Eye [3] is the outer corner.
+    const leftPoint = leftEye[0];
+    const rightPoint = rightEye[3];
+
+    // 3. Calculate Distance and Center
+    const eyeDistance = Math.sqrt(
+        Math.pow(rightPoint.x - leftPoint.x, 2) + 
+        Math.pow(rightPoint.y - leftPoint.y, 2)
+    );
+
+    // Center of the glasses (midpoint between eyes)
+    const center = {
+        x: (leftPoint.x + rightPoint.x) / 2,
+        y: (leftPoint.y + rightPoint.y) / 2
+    };
+
+    // Angle of the face
+    const angle = Math.atan2(
+        rightPoint.y - leftPoint.y,
+        rightPoint.x - leftPoint.x
+    );
+
+    // 4. Calculate Scale
+    // How wide are the glasses in the image vs the eye distance?
+    // Usually, glasses are about 2x to 2.5x the width of the distance between outer eye corners
+    const scaleMultiplier = 2.5; 
+    const glassesWidth = eyeDistance * scaleMultiplier;
+    
+    // Maintain aspect ratio
+    const aspectRatio = glassesImage.naturalHeight / glassesImage.naturalWidth;
+    const glassesHeight = glassesWidth * aspectRatio;
+
+    // 5. Draw
+    ctx.save();
+    ctx.translate(center.x, center.y);
+    ctx.rotate(angle);
+
+    // Offset: We draw from the center. 
+    // X: Move back half the width
+    // Y: Move up slightly to sit on the nose (adjust -0.5 to move up/down)
+    const xOffset = -glassesWidth / 2;
+    const yOffset = -glassesHeight * 0.5; 
+
+    // console.log(`Drawing at: ${center.x}, ${center.y} | Width: ${glassesWidth}`); // Uncomment if still not working
+
+    ctx.drawImage(
+        glassesImage,
+        xOffset,
+        yOffset,
+        glassesWidth,
+        glassesHeight
+    );
+    
+    ctx.restore();
+};
