@@ -1,262 +1,387 @@
 import { useState, useRef, useEffect } from "react";
-import { FaStar } from "react-icons/fa";
-import { AiOutlineShoppingCart, AiOutlineHeart, AiOutlineClose } from "react-icons/ai";
+import { FaStar, FaCamera, FaUpload } from "react-icons/fa";
+import { AiOutlineShoppingCart, AiOutlineHeart, AiOutlineClose, AiFillThunderbolt } from "react-icons/ai";
+import { useNavigate } from "react-router-dom";
 import Header from "../Header/Header";
 import Footer from "../Footer/Footer";
 
 // Your image imports
-import main1 from "../../assets/Details/main1.png"
-import side1 from "../../assets/Details/side1.png"
-import side2 from "../../assets/Details/side2.png"
-import side3 from "../../assets/Details/side3.png"
-import man from "../../assets/Details/man1.png"
-import logo from "../../assets/Details/logo.png"
-import image5 from "../../assets/Home Images/five.png"
-import image6 from "../../assets/Home Images/six.png"
-import image7 from "../../assets/Home Images/seven.png"
+import main1 from "../../assets/Details/main1.png";
+import side1 from "../../assets/Details/side1.png";
+import side2 from "../../assets/Details/side2.png";
+import side3 from "../../assets/Details/side3.png";
+import man from "../../assets/Details/man1.png";
+import logo from "../../assets/Details/logo.png";
+import image5 from "../../assets/Home Images/five.png";
+import image6 from "../../assets/Home Images/six.png";
+import image7 from "../../assets/Home Images/seven.png";
 
-import glassesImageSource from "../../assets/Sunglasses/main1.png";
-
+import glassesImageSource from "../../assets/Sunglasses/sunglasses.png";
 
 import * as faceapi from "face-api.js";
 
-// --- Helper Component for Try-On (New) ---
-// This is where the camera logic will live
-function VirtualTryOn({ isActive, onClose }) {
-    const videoRef = useRef(null);
-    const canvasRef = useRef(null); // New ref for the canvas overlay
-    const glassesImgRef = useRef(new Image()); // Ref to load the glasses image once
+// --- Helper Function: Draw Glasses on Canvas (UNCHANGED) ---
+const drawGlassesOverlay = (canvas, detections, glassesImage) => {
+  const ctx = canvas.getContext("2d");
 
-    // 1. Model and Image Loading
-    useEffect(() => {
-    const MODEL_URL = '/models'; 
+  if (!glassesImage.complete || glassesImage.naturalWidth === 0) return;
+
+  // We clear the canvas before drawing the new frame/overlay
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const landmarks = detections.landmarks;
+  const leftPoint = landmarks.getLeftEye()[0];
+  const rightPoint = landmarks.getRightEye()[3];
+
+  // Calculate Distance & Center
+  const eyeDistance = Math.sqrt(
+    Math.pow(rightPoint.x - leftPoint.x, 2) +
+    Math.pow(rightPoint.y - leftPoint.y, 2)
+  );
+  const center = {
+    x: (leftPoint.x + rightPoint.x) / 2,
+    y: (leftPoint.y + rightPoint.y) / 2,
+  };
+  const angle = Math.atan2(
+    rightPoint.y - leftPoint.y,
+    rightPoint.x - leftPoint.x
+  );
+
+  // Adjust these values to fit the specific glasses model better
+  const scaleMultiplier = 2.0; 
+  const verticalAdjustment = 0.05; // Negative moves glasses up, Positive moves down
+
+  const glassesWidth = eyeDistance * scaleMultiplier;
+  const aspectRatio = glassesImage.naturalHeight / glassesImage.naturalWidth;
+  const glassesHeight = glassesWidth * aspectRatio;
+
+  ctx.save();
+  ctx.translate(center.x, center.y);
+  ctx.rotate(angle);
+
+  const xOffset = -glassesWidth / 2;
+  const yOffset = -glassesHeight * 0.5 + glassesHeight * verticalAdjustment;
+
+  ctx.drawImage(
+    glassesImage,
+    xOffset,
+    yOffset,
+    glassesWidth,
+    glassesHeight
+  );
+
+  ctx.restore();
+};
+
+function VirtualTryOn({ isActive, onClose }) {
+  const [mode, setMode] = useState("camera"); // 'camera' or 'upload'
+  const [imageURL, setImageURL] = useState(null);
+   
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const uploadedImageRef = useRef(null); 
+  const glassesImgRef = useRef(new Image()); 
+
+  // 1. Load Models and Glasses Image on Mount (UNCHANGED)
+  useEffect(() => {
+    const MODEL_URL = "/models";
 
     const loadModelsAndImage = async () => {
-        try {
-            // --- A. Load the AR Models ---
-            await faceapi.tf.setBackend('webgl'); 
-            await faceapi.tf.ready();
-            
-            await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-            await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
-            console.log("✅ Face tracking models loaded!");
+      try {
+        // Load the AR Models
+        await faceapi.tf.setBackend("webgl");
+        await faceapi.tf.ready();
 
-            // --- B. Load the Glasses Image (THE FIX) ---
-            const img = new Image();
-            img.src = glassesImageSource; // This comes from your import
-            
-            // Check if the import actually worked
-            console.log("Attempting to load image from:", glassesImageSource); 
+        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        console.log("✅ Face tracking models loaded!");
 
-            img.onload = () => {
-                console.log("✅ Glasses image loaded successfully!");
-                console.log(`Dimensions: ${img.width}x${img.height}`);
-                glassesImgRef.current = img; // Only update the ref once loaded
-            };
-
-            img.onerror = (err) => {
-                console.error("❌ FAILED to load glasses image. Check the path!", err);
-            };
-
-        } catch (error) {
-            console.error("Failed to load AR models:", error);
-        }
+        // Load the Glasses Image
+        const img = new Image();
+        img.src = glassesImageSource;
+        img.onload = () => {
+          glassesImgRef.current = img;
+        };
+        img.onerror = (err) => {
+            console.error("❌ FAILED to load glasses image.", err);
+        };
+      } catch (error) {
+        console.error("Failed to load AR models:", error);
+      }
     };
-    
+
     loadModelsAndImage();
-}, []);
+  }, []);
 
-    // 2. Camera Start and Cleanup Logic (Modified to attach the canvas)
-    useEffect(() => {
-        let stream = null;
+  // 2. Handle Camera Stream (UNCHANGED)
+  useEffect(() => {
+    let stream = null;
 
-        const startCamera = async () => {
-            if (isActive && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                try {
-                    stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                    if (videoRef.current) {
-                        videoRef.current.srcObject = stream;
-                        // Start tracking once the video starts playing
-                        videoRef.current.addEventListener('play', handleVideoOnPlay); 
-                    }
-                } catch (err) {
-                    console.error("Error accessing the camera: ", err);
-                    alert("Could not access your camera. Please ensure permissions are granted.");
-                    onClose(); 
-                }
-            }
-        };
-
-        const stopCamera = () => {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                stream = null;
-            }
-            if (videoRef.current) {
-                videoRef.current.removeEventListener('play', handleVideoOnPlay);
-            }
-        };
-
-        if (isActive) {
-            startCamera();
-        } else {
-            stopCamera();
+    const startCamera = async () => {
+      // Only start camera if active AND in camera mode
+      if (isActive && mode === "camera" && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            // Start tracking once the video starts playing
+            videoRef.current.addEventListener("play", handleVideoOnPlay);
+          }
+        } catch (err) {
+          console.error("Error accessing camera:", err);
+          alert("Could not access your camera. Please ensure permissions are granted.");
         }
-
-        // Cleanup function for unmounting/closing
-        return () => {
-            stopCamera();
-        };
-    }, [isActive, onClose]);
-
-
-    // 3. Drawing and Tracking Loop
-    const handleVideoOnPlay = () => {
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-
-        if (!video || !canvas) return;
-
-        // Ensure canvas dimensions match video dimensions for correct overlay
-        const displaySize = { width: video.clientWidth, height: video.clientHeight };
-        faceapi.matchDimensions(canvas, displaySize);
-
-        // This interval performs the tracking and drawing for every frame
-        const intervalId = setInterval(async () => {
-            if (video.paused || video.ended) {
-                clearInterval(intervalId);
-                return;
-            }
-
-            // Detect a single face and get the 68 landmark points
-            const detections = await faceapi.detectSingleFace(
-                video,
-                new faceapi.TinyFaceDetectorOptions()
-            ).withFaceLandmarks();
-
-            if (detections) {
-                // Resize detection results to fit the canvas display size
-                const resizedDetections = faceapi.resizeResults(detections, displaySize);
-                
-                // Clear and Draw the glasses
-                drawGlassesOverlay(canvas, resizedDetections, glassesImgRef.current);
-            } else {
-                // Clear canvas if no face is detected
-                canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-            }
-
-        }, 100); // Check every 100ms (10 FPS)
-
-        // Clear interval when closing (will be handled by the useEffect cleanup, too, but this is safer)
-        if (!isActive) {
-            clearInterval(intervalId);
-        }
+      }
     };
 
-    // Updates to handleVideoOnPlay
-// const handleVideoOnPlay = () => {
-//     const video = videoRef.current;
-//     const canvas = canvasRef.current;
-//     if (!video || !canvas) return;
+    const stopCamera = () => {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+        stream = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.removeEventListener("play", handleVideoOnPlay);
+      }
+    };
 
-//     const displaySize = { width: video.clientWidth, height: video.clientHeight };
-//     faceapi.matchDimensions(canvas, displaySize);
+    if (isActive && mode === "camera") {
+      startCamera();
+    } else {
+      stopCamera();
+    }
 
-//     const intervalId = setInterval(async () => {
-//         if (video.paused || video.ended) return;
+    // Cleanup
+    return () => {
+      stopCamera();
+    };
+  }, [isActive, onClose, mode]);
 
-//         // 1. Log to console to prove loop is running
-//         // console.log("Scanning..."); 
+  // 3. Loop: Detect Face in Video (UNCHANGED)
+  const handleVideoOnPlay = () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
 
-//         const detections = await faceapi.detectSingleFace(
-//             video,
-//             new faceapi.TinyFaceDetectorOptions()
-//         ).withFaceLandmarks();
+    const displaySize = { width: video.clientWidth, height: video.clientHeight };
+    faceapi.matchDimensions(canvas, displaySize);
 
-//         const ctx = canvas.getContext('2d');
-//         ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const intervalId = setInterval(async () => {
+      if (video.paused || video.ended) return;
 
-//         if (detections) {
-//             console.log("Face Detected!"); // <--- LOOK FOR THIS IN CONSOLE
-            
-//             const resizedDetections = faceapi.resizeResults(detections, displaySize);
-            
-//             // --- DEBUG TEST: DRAW A BOX INSTEAD OF GLASSES ---
-//             // This checks if the canvas coordinates are correct
-//             faceapi.draw.drawDetections(canvas, resizedDetections);
-//             // -------------------------------------------------
+      const detections = await faceapi.detectSingleFace(
+        video,
+        new faceapi.TinyFaceDetectorOptions()
+      ).withFaceLandmarks();
 
-//             // Your original function (Uncomment when box works)
-//             // drawGlassesOverlay(canvas, resizedDetections, glassesImgRef.current);
-//         } 
-//     }, 100);
+      // Ensure canvas is cleared every frame for video
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-//     return () => clearInterval(intervalId);
-// };
+      if (detections) {
+        const resizedDetections = faceapi.resizeResults(detections, displaySize);
+        drawGlassesOverlay(canvas, resizedDetections, glassesImgRef.current);
+      }
+    }, 100);
 
-    if (!isActive) return null;
+    return () => clearInterval(intervalId);
+  };
 
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex flex-col items-center justify-center p-4">
-            <button 
-                onClick={onClose}
-                className="absolute top-4 right-4 text-white text-3xl hover:text-orange-500 transition"
-                aria-label="Close Virtual Try-On"
+  // 4. One-time: Detect Face in Uploaded Image (UNCHANGED)
+  const handleImageLoad = async () => {
+    const img = uploadedImageRef.current;
+    const canvas = canvasRef.current;
+    if (!img || !canvas) return;
+
+    // Use the rendered size of the image
+    const displaySize = { width: img.width, height: img.height };
+    
+    // Resize canvas to match image
+    canvas.width = displaySize.width;
+    canvas.height = displaySize.height;
+    
+    faceapi.matchDimensions(canvas, displaySize);
+
+    // Detect face
+    const detections = await faceapi.detectSingleFace(
+        img, 
+        new faceapi.TinyFaceDetectorOptions()
+    ).withFaceLandmarks();
+
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (detections) {
+        const resizedDetections = faceapi.resizeResults(detections, displaySize);
+        drawGlassesOverlay(canvas, resizedDetections, glassesImgRef.current);
+    } else {
+        alert("No face detected in this image. Please try a clearer photo!");
+    }
+  };
+
+  // 5. Handle File Selection (UNCHANGED)
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        const url = URL.createObjectURL(file);
+        setImageURL(url);
+    }
+  };
+
+  if (!isActive) return null;
+
+  return (
+    // REDESIGNED MODAL UI
+    <div className="fixed inset-0 bg-gray-900/95 backdrop-blur-md z-[100] flex flex-col items-center justify-center p-4 animate-in fade-in duration-300">
+      
+      {/* Top Bar */}
+      <div className="absolute top-0 w-full p-6 flex justify-between items-center max-w-5xl">
+         <div className="text-white font-bold text-xl tracking-wider uppercase flex items-center gap-2">
+            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+            Virtual Try-On
+         </div>
+         <button
+            onClick={onClose}
+            className="text-white/70 hover:text-white text-4xl transition-transform hover:rotate-90 hover:scale-110"
+            aria-label="Close"
+         >
+            <AiOutlineClose />
+         </button>
+      </div>
+
+      {/* Main Container */}
+      <div className="w-full max-w-4xl flex flex-col gap-6">
+        
+        {/* Toggle Controls */}
+        <div className="flex justify-center gap-4">
+            <button
+            onClick={() => setMode("camera")}
+            className={`flex items-center space-x-3 px-6 py-3 rounded-full font-bold transition-all duration-300 border ${
+                mode === "camera" 
+                ? "bg-orange-600 border-orange-600 text-white shadow-[0_0_20px_rgba(234,88,12,0.5)]" 
+                : "bg-transparent border-gray-600 text-gray-400 hover:border-gray-400 hover:text-white"
+            }`}
             >
-                <AiOutlineClose />
+            <FaCamera className="text-lg" /> <span>Live Camera</span>
             </button>
-
-            <div className="relative w-full max-w-lg aspect-video bg-gray-800 rounded-xl shadow-2xl">
-                <video 
-                    ref={videoRef} 
-                    autoPlay 
-                    playsInline 
-                    muted // Mute is required for many browsers to autoplay media
-                    className="w-full h-full object-cover rounded-xl transform scaleX(-1)" // Mirrors the video
-                >
-                </video>
-                
-                {/* The Canvas for Drawing the Glasses - MUST be directly over the video */}
-                <canvas 
-                    ref={canvasRef} // <-- New Ref attached here
-                    className="absolute inset-0 w-full h-full transform scaleX(-1)"
+            
+            <label className={`relative flex items-center space-x-3 px-6 py-3 rounded-full font-bold transition-all duration-300 border cursor-pointer ${
+                mode === "upload" 
+                ? "bg-orange-600 border-orange-600 text-white shadow-[0_0_20px_rgba(234,88,12,0.5)]" 
+                : "bg-transparent border-gray-600 text-gray-400 hover:border-gray-400 hover:text-white"
+            }`}
+            >
+                <FaUpload className="text-lg" /> <span>Upload Photo</span>
+                <input 
+                type="file" 
+                accept="image/*" 
+                className="hidden" 
+                onClick={() => setMode("upload")}
+                onChange={handleFileChange}
                 />
-            </div>
-            <p className="mt-4 text-white">Move your head to see how the glasses fit! (Loading models...)</p>
+            </label>
         </div>
-    );
+
+        {/* Viewport */}
+        <div className="relative w-full bg-black rounded-3xl overflow-hidden shadow-2xl ring-1 ring-white/10 aspect-video flex items-center justify-center">
+        
+            {/* === CAMERA VIEW === */}
+            {mode === "camera" && (
+                <div className="relative w-full h-full">
+                    <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover transform scaleX(-1)"
+                    />
+                    <canvas
+                        ref={canvasRef}
+                        className="absolute inset-0 w-full h-full transform scaleX(-1)"
+                    />
+                    {/* UI Overlay on Camera */}
+                    <div className="absolute inset-0 border-[3px] border-white/20 rounded-3xl m-4 pointer-events-none">
+                        <div className="absolute top-4 right-4 bg-red-600 text-white text-xs px-2 py-1 rounded font-bold uppercase tracking-widest animate-pulse">
+                            Live
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* === UPLOAD VIEW === */}
+            {mode === "upload" && (
+                <div className="relative w-full h-full flex items-center justify-center bg-[#111]">
+                    {imageURL ? (
+                        <div className="relative inline-block max-h-full">
+                            <img 
+                                ref={uploadedImageRef}
+                                src={imageURL}
+                                alt="Uploaded"
+                                onLoad={handleImageLoad}
+                                className="max-w-full max-h-[70vh] object-contain block rounded-lg shadow-lg"
+                            />
+                            <canvas
+                                ref={canvasRef}
+                                className="absolute inset-0 w-full h-full pointer-events-none"
+                            />
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center text-gray-500 animate-pulse">
+                            <div className="w-24 h-24 border-2 border-dashed border-gray-600 rounded-2xl flex items-center justify-center mb-4">
+                                <FaUpload className="text-3xl" />
+                            </div>
+                            <p className="text-lg font-medium">Select an image to start</p>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+        
+        {/* Instructions */}
+        <div className="text-center space-y-2">
+            <h3 className="text-white text-lg font-medium">
+                {mode === "camera" ? "Align your face within the frame" : "Processing your photo"}
+            </h3>
+            <p className="text-gray-400 text-sm">
+                {mode === "camera" 
+                    ? "Move your head slightly to check the fit from different angles." 
+                    : "For best results, upload a well-lit, front-facing portrait."}
+            </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-
-// --- Your Main Product Page Component (Modified) ---
 const topItems = [
-    // ... (Your topItems array remains the same)
     {
         name: "Oakley Sutro",
-        brand: "Apple Cherry",
-        price: "$99",
-        oldPrice: "$120",
+        brand: "Performance Series",
+        price: "$149",
+        oldPrice: "$180",
         image: image5,
     },
     {
-        name: "Aviator",
-        brand: "Apple Cherry",
-        price: "$99",
-        oldPrice: "$130",
+        name: "Ray-Ban Aviator",
+        brand: "Classic Collection",
+        price: "$160",
+        oldPrice: "$195",
         image: image6,
     },
     {
-        name: "Round",
-        brand: "Apple Cherry",
-        price: "$99",
-        oldPrice: "$120",
+        name: "Clubmaster Classic",
+        brand: "Timeless",
+        price: "$135",
+        oldPrice: "$150",
         image: image7,
     },
 ];
 
 export default function Productpage() {
   const [quantity, setQuantity] = useState(1);
-  const [isTryOnActive, setIsTryOnActive] = useState(false); // New state for try-on
+  const [isTryOnActive, setIsTryOnActive] = useState(false);
+  const navigate = useNavigate();
+
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
   const handleTryOnClick = () => {
     setIsTryOnActive(true);
@@ -266,240 +391,229 @@ export default function Productpage() {
     setIsTryOnActive(false);
   };
 
+  // Logic to handle Add to Cart click
+  const handleAddToCart = () => {
+    // Here you could check if user is already logged in. 
+    // For now, we simply show the prompt as requested.
+    setShowLoginPrompt(true);
+  }
+
   return (
-    <div>
-        {/* Render the VirtualTryOn component when the state is true */}
+    <div className="bg-gray-50 text-slate-800 font-sans selection:bg-orange-100 selection:text-orange-900">
+      {showLoginPrompt && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl text-center relative overflow-hidden transform transition-all scale-100">
+                    
+                    {/* Close Button */}
+                    <button
+                        onClick={() => setShowLoginPrompt(false)}
+                        className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                        <AiOutlineClose size={24} />
+                    </button>
+
+                    {/* Icon */}
+                    <div className="w-20 h-20 bg-orange-50 text-orange-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
+                        <AiOutlineShoppingCart className="text-3xl" />
+                    </div>
+
+                    {/* Content */}
+                    <h3 className="text-2xl font-extrabold text-slate-900 mb-3">One step closer!</h3>
+                    <p className="text-slate-500 mb-8 leading-relaxed">
+                        To add this item to your cart, please log in to your account or sign up for free.
+                    </p>
+
+                    {/* Actions */}
+                    <div className="space-y-3">
+                        <button
+                            onClick={() => navigate('/login')}
+                            className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-orange-600/30 transition-all active:scale-[0.98]"
+                        >
+                            Log In
+                        </button>
+                        <button
+                            onClick={() => navigate('/signup')}
+                            className="w-full bg-white border-2 border-slate-200 text-slate-700 hover:border-orange-500 hover:text-orange-600 font-bold py-3.5 rounded-xl transition-all active:scale-[0.98]"
+                        >
+                            Create Account
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
         <VirtualTryOn isActive={isTryOnActive} onClose={handleTryOnClose} />
         
         <Header />
         
-        <div className="p-6 max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* ... (Your Product Image/Gallery content) ... */}
-            <div>
-              <img
-                src={main1}
-                alt="Aviator Sunglasses"
-                className="rounded-xl w-full"
-              />
-              <div className="flex justify-around items-center mt-4">
-                <img
-                  src={side1}
-                  alt="Side View"
-                  className="w-20 h-12 object-cover rounded"
-                />
-                <img
-                  src={side2}
-                  alt="Flat View"
-                  className="w-20 h-12 object-cover rounded"
-                />
-                <img
-                  src={side3}
-                  alt="Angle View"
-                  className="w-20 h-12 object-cover rounded"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {/* ... (Your Product Details, Price, Description, etc.) ... */}
-              <h1 className="text-3xl font-semibold">Aviator</h1>
-              <p className="text-orange-600 text-xl font-bold">Rs. 500</p>
-              <div className="flex space-x-1 text-yellow-400">
-                {[...Array(5)].map((_, i) => (
-                  <FaStar key={i} />
-                ))}
-              </div>
-              <div className="text-sm text-gray-700">
-                <p>
-                  Crafted with a modern aviator aesthetic, the Sunisi Astra
-                  redefines style through their premium polarized lenses and
-                  lightweight alloy frame. 100% UV400/UVA&UVB protection,
-                  scratch-resistant coating, and ultra-durable build.
-                </p>
-              </div>
-
-              {/* Add to Cart / Wishlist Buttons */}
-              <div className="flex items-center space-x-4">
-                <button className="bg-orange-600 text-white px-6 py-2 rounded-xl flex items-center space-x-2 hover:bg-orange-700">
-                  <AiOutlineShoppingCart /> <span>Add to Cart</span>
-                </button>
-                <button className="border px-4 py-2 rounded-xl flex items-center space-x-2 hover:bg-gray-100">
-                  <AiOutlineHeart /> <span>Wishlist</span>
-                </button>
-              </div>
-
-              {/* The Virtual Try-On Button (Now with onClick handler) */}
-              <div 
-                className="border w-full py-2 rounded-xl text-center cursor-pointer font-semiboldbold hover:bg-gray-100 mt-4 flex justify-around items-center"
-                onClick={handleTryOnClick} // <--- New onClick Handler
-              >
-                <button className="text-2xl">Virtual Try-On</button>
-                <img src={logo} alt="logo" />
-              </div>
-              
-              {/* ... (Rest of your content: Subtotal, Man Image, Description, Reviews) ... */}
-              <div className="text-sm text-gray-600 mt-4">
-                <p>
-                  Sub total: <span className="text-black font-medium">Rs. 500</span>
-                </p>
-                <p className="text-red-500">*Incl. all taxes</p>
-              </div>
-              <div className="w-60 min-h-96">
-                <img className="object-cover rounded-md" src={ man } alt="" />
-              </div>
-
-              <div className="mt-20">
-                <h2 className="text-4xl font-semibold mt-6 mb-2">Description</h2>
-                <p className="text-sm text-gray-700">
-                  Elevate your eyewear game with the Sunisi Astra Aviator shades.
-                  Experience unparalleled style and iconic angular silhouette...
-                </p>
-              </div>
-              
-              <div className="mt-6">
-                <h2 className="text-4xl font-semibold mb-2">Reviews (1)</h2>
-                {/* ... (Review content) ... */}
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm font-semibold">Ahmed Ali</p>
-                    <div className="flex text-yellow-400">
-                      {[...Array(4)].map((_, i) => (
-                        <FaStar key={i} />
-                      ))}
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16">
+                
+                {/* --- LEFT COLUMN: IMAGES --- */}
+                <div className="lg:col-span-7 flex flex-col gap-6">
+                    {/* Main Image Stage */}
+                    <div className="relative group overflow-hidden rounded-[2.5rem] bg-white shadow-xl shadow-gray-200 border border-gray-100 aspect-[4/3]">
+                        <img
+                            src={main1}
+                            alt="Aviator Sunglasses"
+                            className="w-full h-full object-cover transform transition-transform duration-700 ease-out group-hover:scale-105"
+                        />
+                        {/* Floating Badge */}
+                        <div className="absolute top-6 left-6 bg-white/90 backdrop-blur text-orange-600 px-4 py-2 rounded-full text-sm font-bold shadow-sm flex items-center gap-2">
+                             <AiFillThunderbolt /> Best Seller
+                        </div>
                     </div>
-                    <p className="text-sm text-gray-600">2 March 2024 - 03:59 pm</p>
-                    <p className="text-sm mt-1">
-                      Thank you the product was received in perfect condition.
-                    </p>
-                    <div className="flex space-x-2 mt-2">
-                      <img
-                        src={ side1 }
-                        alt="Review"
-                        className="w-12 h-8 object-cover rounded"
-                      />
+
+                    {/* Thumbnails Gallery */}
+                    <div className="grid grid-cols-4 gap-4">
+                        {[side1, side2, side3, man].map((img, idx) => (
+                            <div key={idx} className="relative rounded-2xl overflow-hidden cursor-pointer group border-2 border-transparent hover:border-orange-500 transition-all duration-300 h-24 bg-white shadow-sm">
+                                <img
+                                    src={img}
+                                    alt={`View ${idx}`}
+                                    className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
+                                />
+                            </div>
+                        ))}
                     </div>
-                  </div>
                 </div>
-              </div>
+
+                {/* --- RIGHT COLUMN: DETAILS --- */}
+                <div className="lg:col-span-5 flex flex-col h-full lg:sticky lg:top-24">
+                    <div className="space-y-8">
+                        
+                        {/* Header Section */}
+                        <div className="space-y-2">
+                            <div className="flex justify-between items-start">
+                                <h1 className="text-5xl font-extrabold tracking-tight text-slate-900">Aviator</h1>
+                                <button className="p-3 rounded-full bg-white border border-gray-200 hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition-colors shadow-sm">
+                                    <AiOutlineHeart className="text-xl" />
+                                </button>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <span className="text-3xl font-bold text-orange-600">Rs. 500</span>
+                                <div className="flex items-center gap-1 text-yellow-400 bg-yellow-50 px-2 py-1 rounded-md">
+                                    <FaStar /> <span className="text-slate-700 font-semibold text-sm ml-1">4.8 (120 reviews)</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Description */}
+                        <p className="text-lg text-slate-500 leading-relaxed">
+                            Crafted with a modern aviator aesthetic, the Sunisi Astra
+                            redefines style through premium polarized lenses and a
+                            lightweight alloy frame. Features 100% UV400 protection,
+                            scratch-resistant coating, and an ultra-durable build.
+                        </p>
+
+                        {/* VIRTUAL TRY-ON CTA CARD */}
+                        <div 
+                            onClick={handleTryOnClick} 
+                            className="group relative cursor-pointer overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 p-1 shadow-2xl transition-all hover:shadow-orange-500/20 hover:-translate-y-1"
+                        >
+                            <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-pink-500 opacity-20 group-hover:opacity-30 transition-opacity"></div>
+                            <div className="relative flex items-center justify-between bg-slate-900 rounded-xl p-5 h-full">
+                                <div className="flex items-center gap-4">
+                                    <div className="bg-orange-600/20 p-3 rounded-lg text-orange-500">
+                                        <FaCamera className="text-2xl animate-pulse" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-white font-bold text-lg">Virtual Try-On</h3>
+                                        <p className="text-slate-400 text-sm">See how they look on you instantly</p>
+                                    </div>
+                                </div>
+                                <div className="bg-white/10 p-2 rounded-full text-white transform group-hover:rotate-45 transition-transform duration-300">
+                                    <img src={logo} alt="AR" className="w-8 h-8 invert opacity-80" />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="space-y-4 pt-4 border-t border-gray-200">
+                            <div className="flex items-center justify-between text-sm font-medium text-slate-500 mb-2">
+                                <span>Subtotal</span>
+                                <span className="text-slate-900 text-lg">Rs. 500</span>
+                            </div>
+                            
+                            <button 
+                                onClick={handleAddToCart}
+                                className="w-full bg-orange-600 hover:bg-orange-700 text-white text-lg font-bold py-4 rounded-2xl shadow-lg shadow-orange-600/30 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
+                            >
+                                <AiOutlineShoppingCart className="text-2xl" /> 
+                                <span>Add to Cart</span>
+                            </button>
+                            
+                            <p className="text-center text-xs text-slate-400 flex items-center justify-center gap-1">
+                                {/* <FaRegcheckCircle className="text-green-500" /> Free shipping & 30-day returns */}
+                            </p>
+                        </div>
+
+                        {/* Reviews Preview */}
+                        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mt-6">
+                            <h3 className="font-bold text-slate-900 mb-4">Latest Review</h3>
+                            <div className="flex gap-4">
+                                <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center font-bold text-slate-500">AA</div>
+                                <div>
+                                    <h4 className="font-semibold text-sm">Ahmed Ali</h4>
+                                    <div className="flex text-yellow-400 text-xs my-1">
+                                        {[...Array(5)].map((_, i) => <FaStar key={i} />)}
+                                    </div>
+                                    <p className="text-slate-500 text-sm italic">"Thank you the product was received in perfect condition."</p>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
             </div>
-        </div>
+        </main>
         
-        <section className="py-16 bg-white">
-          {/* ... (Your Top Items Section) ... */}
-          <div className="text-center mb-10">
-            <h2 className="text-3xl font-bold">Top Items</h2>
-            <p className="text-gray-500 mt-2">
-              Loved by thousands. Perfect for you. Find your new favorite today.
-            </p>
-          </div>
-          <div className="flex justify-center gap-6 px-4 overflow-x-auto">
-            {topItems.map((item, index) => (
-              <div
-                key={index}
-                className="min-w-[200px] bg-gray-100 rounded-lg p-4 text-center shadow-md"
-              >
-                <img
-                  src={item.image}
-                  alt={item.name}
-                  className="w-32 h-32 mx-auto object-contain"
-                />
-                <h3 className="font-semibold mt-4">{item.name}</h3>
-                <p className="text-sm text-gray-500">{item.brand}</p>
-                <div className="mt-2">
-                  <span className="text-red-500 font-bold">{item.price}</span>
-                  <span className="text-gray-400 line-through ml-2">
-                    {item.oldPrice}
-                  </span>
+        {/* RECOMMENDATION SECTION */}
+        <section className="py-20 bg-white relative overflow-hidden">
+          {/* Decorative Bg Blob */}
+          <div className="absolute top-0 left-0 w-64 h-64 bg-orange-100 rounded-full blur-3xl opacity-50 -translate-x-1/2 -translate-y-1/2"></div>
+
+          <div className="max-w-7xl mx-auto px-6">
+            <div className="text-center mb-16 space-y-2">
+                <span className="text-orange-600 font-bold uppercase tracking-widest text-sm">You might also like</span>
+                <h2 className="text-4xl font-extrabold text-slate-900">Trending Now</h2>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {topItems.map((item, index) => (
+                <div
+                    key={index}
+                    className="group bg-gray-50 rounded-3xl p-6 transition-all duration-300 hover:bg-white hover:shadow-2xl hover:shadow-gray-200 hover:-translate-y-2 border border-transparent hover:border-gray-100"
+                >
+                    <div className="relative h-48 flex items-center justify-center mb-6">
+                        <div className="absolute w-32 h-32 bg-gradient-to-tr from-gray-200 to-white rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                        <img
+                            src={item.image}
+                            alt={item.name}
+                            className="w-48 h-auto object-contain z-10 drop-shadow-lg transform transition-transform group-hover:scale-110 duration-500"
+                        />
+                    </div>
+                    
+                    <div className="space-y-1">
+                        <p className="text-sm text-gray-500 font-medium">{item.brand}</p>
+                        <h3 className="text-xl font-bold text-slate-900">{item.name}</h3>
+                    </div>
+                    
+                    <div className="flex items-center justify-between mt-4 border-t border-gray-200 pt-4">
+                        <div>
+                            <span className="text-slate-900 font-bold text-lg">{item.price}</span>
+                            <span className="text-gray-400 text-sm line-through ml-2 font-medium">{item.oldPrice}</span>
+                        </div>
+                        <button className="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transform translate-y-2 group-hover:translate-y-0 transition-all duration-300 hover:bg-orange-600">
+                            <AiOutlineShoppingCart />
+                        </button>
+                    </div>
                 </div>
-              </div>
-            ))}
-          </div>
-          <div className="flex justify-center gap-2 mt-8">
-            {[0, 1, 2, 3, 4].map((_, i) => (
-              <span
-                key={i}
-                className={`w-3 h-3 rounded-full ${
-                  i === 2 ? "bg-yellow-500" : "bg-gray-300"
-                }`}
-              ></span>
-            ))}
+                ))}
+            </div>
           </div>
         </section>
+        
         <Footer />
     </div>
   );
 }
-
-const drawGlassesOverlay = (canvas, detections, glassesImage) => {
-    const ctx = canvas.getContext('2d');
-    
-    // 1. Check if the image is actually loaded
-    // explicitly check naturalWidth to ensure it has real data
-    if (!glassesImage.complete || glassesImage.naturalWidth === 0) {
-        console.log("⚠️ Glasses Image not loaded yet!");
-        return;
-    }
-
-    // Clear previous frame
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // 2. Get Landmarks
-    const landmarks = detections.landmarks;
-    const leftEye = landmarks.getLeftEye();
-    const rightEye = landmarks.getRightEye();
-
-    // The logic: Left Eye [0] is the outer corner. Right Eye [3] is the outer corner.
-    const leftPoint = leftEye[0];
-    const rightPoint = rightEye[3];
-
-    // 3. Calculate Distance and Center
-    const eyeDistance = Math.sqrt(
-        Math.pow(rightPoint.x - leftPoint.x, 2) + 
-        Math.pow(rightPoint.y - leftPoint.y, 2)
-    );
-
-    // Center of the glasses (midpoint between eyes)
-    const center = {
-        x: (leftPoint.x + rightPoint.x) / 2,
-        y: (leftPoint.y + rightPoint.y) / 2
-    };
-
-    // Angle of the face
-    const angle = Math.atan2(
-        rightPoint.y - leftPoint.y,
-        rightPoint.x - leftPoint.x
-    );
-
-    // 4. Calculate Scale
-    // How wide are the glasses in the image vs the eye distance?
-    // Usually, glasses are about 2x to 2.5x the width of the distance between outer eye corners
-    const scaleMultiplier = 2.5; 
-    const glassesWidth = eyeDistance * scaleMultiplier;
-    
-    // Maintain aspect ratio
-    const aspectRatio = glassesImage.naturalHeight / glassesImage.naturalWidth;
-    const glassesHeight = glassesWidth * aspectRatio;
-
-    // 5. Draw
-    ctx.save();
-    ctx.translate(center.x, center.y);
-    ctx.rotate(angle);
-
-    // Offset: We draw from the center. 
-    // X: Move back half the width
-    // Y: Move up slightly to sit on the nose (adjust -0.5 to move up/down)
-    const xOffset = -glassesWidth / 2;
-    const yOffset = -glassesHeight * 0.5; 
-
-    // console.log(`Drawing at: ${center.x}, ${center.y} | Width: ${glassesWidth}`); // Uncomment if still not working
-
-    ctx.drawImage(
-        glassesImage,
-        xOffset,
-        yOffset,
-        glassesWidth,
-        glassesHeight
-    );
-    
-    ctx.restore();
-};

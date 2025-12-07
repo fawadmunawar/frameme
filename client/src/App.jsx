@@ -14,6 +14,9 @@ import Cart from './Components/Cart/Cart'
 import Signup from './Components/Signup/Signup'
 import Login from './Components/Login/Login'
 import Forgot from './Components/Forgot/Forgot'
+import About from './Components/Details/Details'
+import Shop from './Components/Shop/Shop'
+import Contact from './Components/Contact/Contact'
 
 function App() {
   const [count, setCount] = useState(0)
@@ -23,6 +26,9 @@ function App() {
       <BrowserRouter>
       <Routes>
         <Route path="/" element={<Homee />} />       {/* Home Page */}
+        <Route path="/about" element={<About />} />       {/* About Page */}
+        <Route path="/shop" element={<Shop />} />       {/* About Page */}
+        <Route path="/contact" element={<Contact />} />       {/* About Page */}
         <Route path="/sunglasses" element={<Sunglasses />} /> {/* Sunglasses Page */}
         <Route path="/prescription" element={<Prescription />} /> {/* Prescription Page */}
         <Route path="/sports" element={<Sports />} /> {/* Sports Page */}
