@@ -294,9 +294,9 @@ const About = () => {
           
           <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-12">
               {[
-                  { name: "Alex Chen", role: "Founder & CEO", img: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400" },
-                  { name: "Sarah Miller", role: "Head of Design", img: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=400" },
-                  { name: "Jordan Smith", role: "Lead Engineer", img: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=400" }
+                  { name: "Fawad Munawar", role: "Founder & CEO", img: "https://plus.unsplash.com/premium_photo-1732757787056-bb8a19f1c855?q=80&w=1054&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" },
+                  { name: "Shah Fahad", role: "Head of Design", img: "https://images.unsplash.com/photo-1679310447630-7d3fc02199f7?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" },
+                  { name: "Manahil Asif", role: "Lead Engineer", img: "https://images.unsplash.com/photo-1739513235245-7bf155a094d0?q=80&w=880&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" }
               ].map((member, idx) => (
                   <motion.div 
                     key={idx}

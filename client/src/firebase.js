@@ -3,12 +3,13 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyCDw7RwN6GGLq7EiwrQ76zsk3H6dU7CIHs",
+  authDomain: "frameme-dd69d.firebaseapp.com",
+  projectId: "frameme-dd69d",
+  storageBucket: "frameme-dd69d.firebasestorage.app",
+  messagingSenderId: "310501327812",
+  appId: "1:310501327812:web:e660efa75a8fff94f55a91",
+  measurementId: "G-LZ0EF8NXLN"
 };
 
 const app = initializeApp(firebaseConfig);

@@ -1,9 +1,14 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useContext } from "react";
 import { FaStar, FaCamera, FaUpload } from "react-icons/fa";
 import { AiOutlineShoppingCart, AiOutlineHeart, AiOutlineClose, AiFillThunderbolt } from "react-icons/ai";
 import { useNavigate } from "react-router-dom";
 import Header from "../Header/Header";
 import Footer from "../Footer/Footer";
+import { CartContext } from "../../CartContext.jsx";
+
+// --- FIREBASE IMPORTS ---
+import { auth } from "../../firebase.js"; // Ensure this path matches your file structure
+import { onAuthStateChanged } from "firebase/auth";
 
 // Your image imports
 import main1 from "../../assets/Details/main1.png";
@@ -26,14 +31,12 @@ const drawGlassesOverlay = (canvas, detections, glassesImage) => {
 
   if (!glassesImage.complete || glassesImage.naturalWidth === 0) return;
 
-  // We clear the canvas before drawing the new frame/overlay
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   const landmarks = detections.landmarks;
   const leftPoint = landmarks.getLeftEye()[0];
   const rightPoint = landmarks.getRightEye()[3];
 
-  // Calculate Distance & Center
   const eyeDistance = Math.sqrt(
     Math.pow(rightPoint.x - leftPoint.x, 2) +
     Math.pow(rightPoint.y - leftPoint.y, 2)
@@ -47,9 +50,8 @@ const drawGlassesOverlay = (canvas, detections, glassesImage) => {
     rightPoint.x - leftPoint.x
   );
 
-  // Adjust these values to fit the specific glasses model better
   const scaleMultiplier = 2.0; 
-  const verticalAdjustment = 0.05; // Negative moves glasses up, Positive moves down
+  const verticalAdjustment = 0.05;
 
   const glassesWidth = eyeDistance * scaleMultiplier;
   const aspectRatio = glassesImage.naturalHeight / glassesImage.naturalWidth;
@@ -74,7 +76,7 @@ const drawGlassesOverlay = (canvas, detections, glassesImage) => {
 };
 
 function VirtualTryOn({ isActive, onClose }) {
-  const [mode, setMode] = useState("camera"); // 'camera' or 'upload'
+  const [mode, setMode] = useState("camera");
   const [imageURL, setImageURL] = useState(null);
    
   const videoRef = useRef(null);
@@ -82,13 +84,11 @@ function VirtualTryOn({ isActive, onClose }) {
   const uploadedImageRef = useRef(null); 
   const glassesImgRef = useRef(new Image()); 
 
-  // 1. Load Models and Glasses Image on Mount (UNCHANGED)
   useEffect(() => {
     const MODEL_URL = "/models";
 
     const loadModelsAndImage = async () => {
       try {
-        // Load the AR Models
         await faceapi.tf.setBackend("webgl");
         await faceapi.tf.ready();
 
@@ -96,7 +96,6 @@ function VirtualTryOn({ isActive, onClose }) {
         await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
         console.log("✅ Face tracking models loaded!");
 
-        // Load the Glasses Image
         const img = new Image();
         img.src = glassesImageSource;
         img.onload = () => {
@@ -113,18 +112,15 @@ function VirtualTryOn({ isActive, onClose }) {
     loadModelsAndImage();
   }, []);
 
-  // 2. Handle Camera Stream (UNCHANGED)
   useEffect(() => {
     let stream = null;
 
     const startCamera = async () => {
-      // Only start camera if active AND in camera mode
       if (isActive && mode === "camera" && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         try {
           stream = await navigator.mediaDevices.getUserMedia({ video: true });
           if (videoRef.current) {
             videoRef.current.srcObject = stream;
-            // Start tracking once the video starts playing
             videoRef.current.addEventListener("play", handleVideoOnPlay);
           }
         } catch (err) {
@@ -150,13 +146,11 @@ function VirtualTryOn({ isActive, onClose }) {
       stopCamera();
     }
 
-    // Cleanup
     return () => {
       stopCamera();
     };
   }, [isActive, onClose, mode]);
 
-  // 3. Loop: Detect Face in Video (UNCHANGED)
   const handleVideoOnPlay = () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -173,7 +167,6 @@ function VirtualTryOn({ isActive, onClose }) {
         new faceapi.TinyFaceDetectorOptions()
       ).withFaceLandmarks();
 
-      // Ensure canvas is cleared every frame for video
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -186,22 +179,18 @@ function VirtualTryOn({ isActive, onClose }) {
     return () => clearInterval(intervalId);
   };
 
-  // 4. One-time: Detect Face in Uploaded Image (UNCHANGED)
   const handleImageLoad = async () => {
     const img = uploadedImageRef.current;
     const canvas = canvasRef.current;
     if (!img || !canvas) return;
 
-    // Use the rendered size of the image
     const displaySize = { width: img.width, height: img.height };
     
-    // Resize canvas to match image
     canvas.width = displaySize.width;
     canvas.height = displaySize.height;
     
     faceapi.matchDimensions(canvas, displaySize);
 
-    // Detect face
     const detections = await faceapi.detectSingleFace(
         img, 
         new faceapi.TinyFaceDetectorOptions()
@@ -218,7 +207,6 @@ function VirtualTryOn({ isActive, onClose }) {
     }
   };
 
-  // 5. Handle File Selection (UNCHANGED)
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files[0]) {
         const file = e.target.files[0];
@@ -230,10 +218,8 @@ function VirtualTryOn({ isActive, onClose }) {
   if (!isActive) return null;
 
   return (
-    // REDESIGNED MODAL UI
     <div className="fixed inset-0 bg-gray-900/95 backdrop-blur-md z-[100] flex flex-col items-center justify-center p-4 animate-in fade-in duration-300">
       
-      {/* Top Bar */}
       <div className="absolute top-0 w-full p-6 flex justify-between items-center max-w-5xl">
          <div className="text-white font-bold text-xl tracking-wider uppercase flex items-center gap-2">
             <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
@@ -248,10 +234,8 @@ function VirtualTryOn({ isActive, onClose }) {
          </button>
       </div>
 
-      {/* Main Container */}
       <div className="w-full max-w-4xl flex flex-col gap-6">
         
-        {/* Toggle Controls */}
         <div className="flex justify-center gap-4">
             <button
             onClick={() => setMode("camera")}
@@ -281,10 +265,8 @@ function VirtualTryOn({ isActive, onClose }) {
             </label>
         </div>
 
-        {/* Viewport */}
         <div className="relative w-full bg-black rounded-3xl overflow-hidden shadow-2xl ring-1 ring-white/10 aspect-video flex items-center justify-center">
         
-            {/* === CAMERA VIEW === */}
             {mode === "camera" && (
                 <div className="relative w-full h-full">
                     <video
@@ -298,7 +280,6 @@ function VirtualTryOn({ isActive, onClose }) {
                         ref={canvasRef}
                         className="absolute inset-0 w-full h-full transform scaleX(-1)"
                     />
-                    {/* UI Overlay on Camera */}
                     <div className="absolute inset-0 border-[3px] border-white/20 rounded-3xl m-4 pointer-events-none">
                         <div className="absolute top-4 right-4 bg-red-600 text-white text-xs px-2 py-1 rounded font-bold uppercase tracking-widest animate-pulse">
                             Live
@@ -307,7 +288,6 @@ function VirtualTryOn({ isActive, onClose }) {
                 </div>
             )}
 
-            {/* === UPLOAD VIEW === */}
             {mode === "upload" && (
                 <div className="relative w-full h-full flex items-center justify-center bg-[#111]">
                     {imageURL ? (
@@ -336,7 +316,6 @@ function VirtualTryOn({ isActive, onClose }) {
             )}
         </div>
         
-        {/* Instructions */}
         <div className="text-center space-y-2">
             <h3 className="text-white text-lg font-medium">
                 {mode === "camera" ? "Align your face within the frame" : "Processing your photo"}
@@ -379,9 +358,28 @@ const topItems = [
 export default function Productpage() {
   const [quantity, setQuantity] = useState(1);
   const [isTryOnActive, setIsTryOnActive] = useState(false);
+  const { addToCart } = useContext(CartContext);
   const navigate = useNavigate();
 
+  // --- NEW: User State ---
+  const [user, setUser] = useState(null);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+
+  // --- NEW: Listen for Auth Changes ---
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const currentProduct = {
+      id: "aviator-001", 
+      name: "Sunisi Astra Aviator",
+      brand: "Sunisi",
+      price: 500,
+      image: main1 
+  };
 
   const handleTryOnClick = () => {
     setIsTryOnActive(true);
@@ -391,15 +389,21 @@ export default function Productpage() {
     setIsTryOnActive(false);
   };
 
-  // Logic to handle Add to Cart click
+  // --- MODIFIED: Handle Add to Cart ---
   const handleAddToCart = () => {
-    // Here you could check if user is already logged in. 
-    // For now, we simply show the prompt as requested.
-    setShowLoginPrompt(true);
+    if (user) {
+        // User IS logged in: Add to cart
+        addToCart(currentProduct);
+        alert("Item added to cart!"); // Optional: Simple feedback
+    } else {
+        // User is NOT logged in: Show the popup
+        setShowLoginPrompt(true);
+    }
   }
 
   return (
     <div className="bg-gray-50 text-slate-800 font-sans selection:bg-orange-100 selection:text-orange-900">
+      {/* POPUP MODAL */}
       {showLoginPrompt && (
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
                 <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl text-center relative overflow-hidden transform transition-all scale-100">
@@ -441,6 +445,7 @@ export default function Productpage() {
                 </div>
             </div>
         )}
+        
         <VirtualTryOn isActive={isTryOnActive} onClose={handleTryOnClose} />
         
         <Header />
@@ -534,6 +539,8 @@ export default function Productpage() {
                                 <span className="text-slate-900 text-lg">Rs. 500</span>
                             </div>
                             
+                            {/* --- THE ADD TO CART BUTTON --- */}
+                            {/* This button is always visible, but the logic inside changes based on auth state */}
                             <button 
                                 onClick={handleAddToCart}
                                 className="w-full bg-orange-600 hover:bg-orange-700 text-white text-lg font-bold py-4 rounded-2xl shadow-lg shadow-orange-600/30 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"

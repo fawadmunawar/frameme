@@ -8,8 +8,18 @@ import {
   EyeOff, 
   ArrowRight, 
   ArrowLeft,
-  Star
+  Star,
+  Loader2,
+  AlertCircle
 } from "lucide-react";
+
+// --- FIREBASE IMPORTS ---
+import { auth } from "../../firebase"; 
+import { 
+  signInWithEmailAndPassword, 
+  GoogleAuthProvider, 
+  signInWithPopup 
+} from "firebase/auth";
 
 // Google Logo SVG Component
 const GoogleLogo = () => (
@@ -24,6 +34,55 @@ const GoogleLogo = () => (
 const Login = () => {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
+
+  // --- NEW STATE VARIABLES ---
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  // --- FIREBASE HANDLERS ---
+
+  // 1. Handle Google Login
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    setError("");
+    const provider = new GoogleAuthProvider();
+    
+    try {
+      await signInWithPopup(auth, provider);
+      navigate("/"); // Redirect to home
+    } catch (err) {
+      console.error(err);
+      setError("Failed to sign in with Google.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 2. Handle Email Login
+  const handleLogin = async (e) => {
+    e.preventDefault(); // Prevent page refresh
+    setLoading(true);
+    setError("");
+
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      navigate("/"); // Redirect to home
+    } catch (err) {
+      console.error(err);
+      // Custom error messages
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        setError("Invalid email or password.");
+      } else if (err.code === 'auth/too-many-requests') {
+        setError("Too many attempts. Please try again later.");
+      } else {
+        setError("Failed to log in. Please check your connection.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Animation Variants
   const containerVariants = {
@@ -103,8 +162,8 @@ const Login = () => {
       <div className="w-full lg:w-1/2 flex flex-col justify-center items-center p-6 relative">
          {/* Mobile Back Button */}
          <button 
-            onClick={() => navigate("/")}
-            className="lg:hidden absolute top-6 left-6 p-2 bg-white rounded-full shadow-sm text-gray-600 hover:text-orange-500 transition-colors"
+           onClick={() => navigate("/")}
+           className="lg:hidden absolute top-6 left-6 p-2 bg-white rounded-full shadow-sm text-gray-600 hover:text-orange-500 transition-colors"
          >
              <ArrowLeft size={20} />
          </button>
@@ -124,12 +183,26 @@ const Login = () => {
                 <p className="text-gray-500 text-sm">Access your account details and try-on history.</p>
             </motion.div>
 
+            {/* Error Message Display */}
+            {error && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-6 p-3 rounded-xl bg-red-50 border border-red-100 flex items-center gap-2 text-red-600 text-sm font-medium"
+              >
+                <AlertCircle size={16} />
+                {error}
+              </motion.div>
+            )}
+
             {/* Google Button */}
             <motion.button 
                 variants={itemVariants}
                 whileHover={{ scale: 1.02, backgroundColor: "#f9fafb" }}
                 whileTap={{ scale: 0.98 }}
-                className="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 text-gray-700 font-semibold py-3.5 rounded-2xl shadow-sm transition-all mb-6 group hover:border-gray-300"
+                onClick={handleGoogleLogin}
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 text-gray-700 font-semibold py-3.5 rounded-2xl shadow-sm transition-all mb-6 group hover:border-gray-300 disabled:opacity-70 disabled:cursor-not-allowed"
             >
                 <GoogleLogo />
                 <span>Sign in with Google</span>
@@ -141,7 +214,7 @@ const Login = () => {
                 <div className="flex-grow h-px bg-gray-200"></div>
             </motion.div>
 
-            <div className="space-y-5">
+            <form onSubmit={handleLogin} className="space-y-5">
                 {/* Email Input */}
                 <motion.div variants={itemVariants}>
                     <label className="block text-sm font-bold text-gray-700 mb-1.5 ml-1">Email Address</label>
@@ -149,6 +222,8 @@ const Login = () => {
                         <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-orange-500 transition-colors" size={20}/>
                         <input 
                             type="email" 
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
                             placeholder="you@example.com"
                             className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-2xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 block pl-12 p-3.5 outline-none transition-all placeholder:text-gray-400"
                         />
@@ -162,6 +237,8 @@ const Login = () => {
                         <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-orange-500 transition-colors" size={20}/>
                         <input 
                             type={showPassword ? "text" : "password"} 
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
                             placeholder="••••••••"
                             className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm rounded-2xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 block pl-12 pr-12 p-3.5 outline-none transition-all placeholder:text-gray-400"
                         />
@@ -187,14 +264,22 @@ const Login = () => {
 
                 {/* Submit Button */}
                 <motion.button 
+                    type="submit"
                     variants={itemVariants}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold py-4 rounded-2xl shadow-lg hover:shadow-orange-500/40 transition-all flex items-center justify-center gap-2 group mt-4"
+                    disabled={loading}
+                    className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold py-4 rounded-2xl shadow-lg hover:shadow-orange-500/40 transition-all flex items-center justify-center gap-2 group mt-4 disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                    Log In <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
+                    {loading ? (
+                        <Loader2 className="animate-spin" size={20} />
+                    ) : (
+                        <>
+                            Log In <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
+                        </>
+                    )}
                 </motion.button>
-            </div>
+            </form>
 
             <motion.div variants={itemVariants} className="mt-8 text-center">
                 <p className="text-gray-500 text-sm">

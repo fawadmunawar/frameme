@@ -8,10 +8,15 @@ import {
   FaTruck,
   FaBars,
   FaTimes,
-  FaArrowRight
+  FaArrowRight,
+  FaSignOutAlt // Imported Logout Icon
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
+
+// --- FIREBASE IMPORTS ---
+import { auth } from "../../firebase"; 
+import { onAuthStateChanged, signOut } from "firebase/auth";
 
 const Header = () => {
   const navigate = useNavigate();
@@ -19,12 +24,42 @@ const Header = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [announcementIndex, setAnnouncementIndex] = useState(0);
+  
+  // --- USER STATE ---
+  const [user, setUser] = useState(null);
 
   const announcements = [
     "Free Shipping on Orders Over $100",
     "New Collection 2025 Out Now!",
     "Get 20% Off Your First Order - Code: WELCOME"
   ];
+
+  // --- 1. CHECK AUTH STATE ---
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // --- 2. HANDLE LOGOUT ---
+  const handleLogout = async () => {
+    try {
+      await signOut(auth); // Firebase Sign Out
+      navigate("/login");       // Redirect to Home
+      setIsMobileMenuOpen(false); // Close mobile menu
+      console.log("User logged out successfully");
+    } catch (error) {
+      console.error("Error signing out: ", error);
+    }
+  };
+
+  // Helper to get display name
+  const getUserName = () => {
+    if (user?.displayName) return user.displayName;
+    if (user?.email) return user.email.split('@')[0];
+    return "User";
+  };
 
   // Handle Scroll Effect
   useEffect(() => {
@@ -43,7 +78,6 @@ const Header = () => {
     return () => clearInterval(interval);
   }, [announcements.length]);
 
-  // Nav Items Data
   const navLinks = [
     { name: "Home", path: "/" },
     { name: "Shop", path: "/sunglasses" },
@@ -56,7 +90,6 @@ const Header = () => {
       {/* --- TOP ANNOUNCEMENT BAR --- */}
       <div className="bg-[#0b0c10] text-white text-xs py-2.5 px-6 overflow-hidden relative z-50">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
-            {/* Left Side: Animated Text */}
             <div className="flex-1 flex justify-center md:justify-start overflow-hidden h-5 relative">
               <AnimatePresence mode="wait">
                 <motion.p
@@ -71,8 +104,6 @@ const Header = () => {
                 </motion.p>
               </AnimatePresence>
             </div>
-
-            {/* Right Side: Utility Links (Desktop Only) */}
             <div className="hidden md:flex gap-6 text-gray-400">
                 <a href="#" className="flex items-center gap-2 hover:text-white transition-colors text-[11px] uppercase font-bold tracking-wider">
                     <FaPhoneAlt size={10} /> +1 (800) 123-4567
@@ -97,7 +128,7 @@ const Header = () => {
       >
         <div className="max-w-7xl mx-auto px-6 flex justify-between items-center gap-4">
           
-          {/* 1. Logo */}
+          {/* Logo */}
           <div 
             className="cursor-pointer group" 
             onClick={() => navigate("/")}
@@ -107,7 +138,7 @@ const Header = () => {
             </h1>
           </div>
 
-          {/* 2. Desktop Navigation */}
+          {/* Desktop Nav */}
           <nav className="hidden md:flex gap-10 text-sm font-bold text-gray-600 uppercase tracking-widest">
             {navLinks.map((link) => (
               <a
@@ -121,10 +152,10 @@ const Header = () => {
             ))}
           </nav>
 
-          {/* 3. Icons & Search */}
+          {/* Icons Area */}
           <div className="flex items-center gap-4 lg:gap-6">
             
-            {/* Expandable Search */}
+            {/* Search */}
             <div className={`hidden sm:flex items-center transition-all duration-300 bg-gray-100 rounded-full ${isSearchOpen ? 'w-64 px-4' : 'w-10 px-0 bg-transparent justify-end'}`}>
                {isSearchOpen && (
                    <input 
@@ -143,10 +174,7 @@ const Header = () => {
                </button>
             </div>
 
-
-            {/* Action Icons */}
             <div className="flex items-center gap-3 lg:gap-5 text-gray-800">
-              
               <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className="p-2 hover:bg-gray-100 rounded-full transition-colors relative group">
                 <FaHeart className="text-lg group-hover:text-red-500 transition-colors" />
               </motion.button>
@@ -163,14 +191,36 @@ const Header = () => {
                 </span>
               </motion.button>
 
-              <motion.button 
-                whileHover={{ scale: 1.1 }} 
-                whileTap={{ scale: 0.9 }}
-                onClick={() => navigate("/signup")}
-                className="hidden sm:block p-2 hover:bg-gray-100 rounded-full transition-colors hover:text-blue-600"
-              >
-                <FaUser className="text-lg" />
-              </motion.button>
+              {/* --- DESKTOP USER SECTION --- */}
+              {user ? (
+                <div className="hidden sm:flex items-center gap-3 border-l border-gray-300 pl-4 ml-2">
+                    <div className="flex flex-col text-right leading-tight">
+                        <span className="text-[10px] text-gray-500 font-medium">Welcome</span>
+                        <span className="text-sm font-bold text-orange-600 max-w-[100px] truncate">{getUserName()}</span>
+                    </div>
+                    
+                    {/* Logout Button */}
+                    <motion.button 
+                        whileHover={{ scale: 1.1 }} 
+                        whileTap={{ scale: 0.9 }}
+                        onClick={handleLogout}
+                        title="Log Out"
+                        className="p-2 bg-gray-100 rounded-full text-gray-600 hover:bg-red-50 hover:text-red-500 transition-colors"
+                    >
+                        <FaSignOutAlt className="text-sm" />
+                    </motion.button>
+                </div>
+              ) : (
+                <motion.button 
+                    whileHover={{ scale: 1.1 }} 
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => navigate("/login")}
+                    className="hidden sm:block p-2 hover:bg-gray-100 rounded-full transition-colors hover:text-blue-600"
+                    title="Log In"
+                >
+                    <FaUser className="text-lg" />
+                </motion.button>
+              )}
 
               {/* Mobile Menu Toggle */}
               <button 
@@ -184,11 +234,10 @@ const Header = () => {
         </div>
       </motion.header>
 
-      {/* --- MOBILE MENU OVERLAY --- */}
+      {/* --- MOBILE MENU --- */}
       <AnimatePresence>
         {isMobileMenuOpen && (
           <>
-            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -197,7 +246,6 @@ const Header = () => {
               className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50"
             />
             
-            {/* Sidebar */}
             <motion.div
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
@@ -205,7 +253,6 @@ const Header = () => {
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
               className="fixed top-0 right-0 h-full w-[80%] max-w-sm bg-white shadow-2xl z-50 flex flex-col"
             >
-              {/* Header inside Menu */}
               <div className="p-6 flex justify-between items-center border-b border-gray-100">
                 <span className="text-xl font-bold">Menu</span>
                 <button 
@@ -216,8 +263,20 @@ const Header = () => {
                 </button>
               </div>
 
-              {/* Links */}
               <nav className="flex-1 overflow-y-auto p-6 flex flex-col gap-2">
+                {/* Mobile User Profile Info */}
+                {user && (
+                    <div className="mb-6 p-4 bg-orange-50/50 rounded-xl border border-orange-100 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 font-bold">
+                            {getUserName().charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                            <p className="text-xs text-gray-500 font-medium">Currently logged in as</p>
+                            <p className="text-sm font-bold text-gray-900">{getUserName()}</p>
+                        </div>
+                    </div>
+                )}
+
                 {navLinks.map((link, idx) => (
                   <motion.a
                     key={link.name}
@@ -236,11 +295,23 @@ const Header = () => {
                 ))}
               </nav>
 
-              {/* Footer inside Menu */}
               <div className="p-6 bg-gray-50">
-                 <button className="w-full bg-gray-900 text-white py-3 rounded-lg font-bold shadow-lg mb-4 hover:bg-orange-500 transition-colors">
-                    Log In / Sign Up
-                 </button>
+                 {/* Mobile Logout / Login Buttons */}
+                 {user ? (
+                    <button 
+                        onClick={handleLogout}
+                        className="w-full bg-white text-red-500 border border-red-200 py-3 rounded-lg font-bold shadow-sm mb-4 hover:bg-red-50 hover:border-red-300 transition-all flex justify-center items-center gap-2"
+                    >
+                        <FaSignOutAlt /> Log Out
+                    </button>
+                 ) : (
+                    <button 
+                        onClick={() => { navigate("/login"); setIsMobileMenuOpen(false); }}
+                        className="w-full bg-gray-900 text-white py-3 rounded-lg font-bold shadow-lg mb-4 hover:bg-orange-500 transition-colors"
+                    >
+                        Log In / Sign Up
+                    </button>
+                 )}
                  <div className="flex justify-center gap-4 text-gray-400">
                     <span className="text-xs">Privacy Policy</span>
                     <span className="text-xs">Terms & Conditions</span>
